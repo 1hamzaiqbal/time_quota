@@ -1,0 +1,35 @@
+{
+  "name": "time_quota",
+  "version": "1.0.0",
+  "private": true,
+  "description": "vibecoded app to visualize impending doom",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/1hamzaiqbal/time_quota.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/1hamzaiqbal/time_quota/issues"
+  },
+  "homepage": "https://github.com/1hamzaiqbal/time_quota#readme",
+  "dependencies": {
+    "lucide-react": "^0.554.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^5.1.1",
+    "autoprefixer": "^10.4.22",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3.4.17",
+    "vite": "^7.2.2"
+  }
+}
