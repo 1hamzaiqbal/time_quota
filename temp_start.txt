@@ -1,0 +1,57 @@
+import React, { useState, useEffect } from 'react';
+import { Play, Pause, RotateCcw, Plus, Trash2, GripHorizontal, Clock, AlertCircle, FileText, X, History, ChevronRight, ChevronDown, Target, Square, Pencil, Check, Eye, EyeOff, Trophy, CheckCircle2, Calendar } from 'lucide-react';
+
+// --- Color Palette ---
+const COLORS = [
+  { bg: 'bg-rose-100', border: 'border-rose-200', text: 'text-rose-800', bar: 'bg-rose-500', sessionBar: 'bg-rose-300', modalBg: 'bg-rose-50', dot: 'bg-rose-500', glow: 'shadow-rose-500/50' },
+  { bg: 'bg-orange-100', border: 'border-orange-200', text: 'text-orange-800', bar: 'bg-orange-500', sessionBar: 'bg-orange-300', modalBg: 'bg-orange-50', dot: 'bg-orange-500', glow: 'shadow-orange-500/50' },
+  { bg: 'bg-amber-100', border: 'border-amber-200', text: 'text-amber-800', bar: 'bg-amber-500', sessionBar: 'bg-amber-300', modalBg: 'bg-amber-50', dot: 'bg-amber-500', glow: 'shadow-amber-500/50' },
+  { bg: 'bg-emerald-100', border: 'border-emerald-200', text: 'text-emerald-800', bar: 'bg-emerald-500', sessionBar: 'bg-emerald-300', modalBg: 'bg-emerald-50', dot: 'bg-emerald-500', glow: 'shadow-emerald-500/50' },
+  { bg: 'bg-teal-100', border: 'border-teal-200', text: 'text-teal-800', bar: 'bg-teal-500', sessionBar: 'bg-teal-300', modalBg: 'bg-teal-50', dot: 'bg-teal-500', glow: 'shadow-teal-500/50' },
+  { bg: 'bg-cyan-100', border: 'border-cyan-200', text: 'text-cyan-800', bar: 'bg-cyan-500', sessionBar: 'bg-cyan-300', modalBg: 'bg-cyan-50', dot: 'bg-cyan-500', glow: 'shadow-cyan-500/50' },
+  { bg: 'bg-blue-100', border: 'border-blue-200', text: 'text-blue-800', bar: 'bg-blue-500', sessionBar: 'bg-blue-300', modalBg: 'bg-blue-50', dot: 'bg-blue-500', glow: 'shadow-blue-500/50' },
+  { bg: 'bg-indigo-100', border: 'border-indigo-200', text: 'text-indigo-800', bar: 'bg-indigo-500', sessionBar: 'bg-indigo-300', modalBg: 'bg-indigo-50', dot: 'bg-indigo-500', glow: 'shadow-indigo-500/50' },
+  { bg: 'bg-violet-100', border: 'border-violet-200', text: 'text-violet-800', bar: 'bg-violet-500', sessionBar: 'bg-violet-300', modalBg: 'bg-violet-50', dot: 'bg-violet-500', glow: 'shadow-violet-500/50' },
+  { bg: 'bg-fuchsia-100', border: 'border-fuchsia-200', text: 'text-fuchsia-800', bar: 'bg-fuchsia-500', sessionBar: 'bg-fuchsia-300', modalBg: 'bg-fuchsia-50', dot: 'bg-fuchsia-500', glow: 'shadow-fuchsia-500/50' },
+];
+
+const formatTime = (seconds) => {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  
+  const mStr = m.toString().padStart(2, '0');
+  const sStr = s.toString().padStart(2, '0');
+  
+  if (h > 0) return `${h}:${mStr}:${sStr}`;
+  return `${mStr}:${sStr}`;
+};
+
+const formatHistoryDate = (timestamp) => {
+  return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+};
+
+// Calculate days left until due date
+const getDaysLeft = (dueDateTimestamp) => {
+  if (!dueDateTimestamp) return null;
+  const now = new Date();
+  const due = new Date(dueDateTimestamp);
+  // Set both to midnight for accurate day calculation
+  now.setHours(0, 0, 0, 0);
+  due.setHours(0, 0, 0, 0);
+  const diffTime = due - now;
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  return diffDays;
+};
+
+// Calculate average hours per day needed to reach quota
+const getAvgHoursPerDay = (quotaMinutes, elapsedSeconds, daysLeft) => {
+  if (!daysLeft || daysLeft <= 0) return null;
+  const quotaSeconds = quotaMinutes * 60;
+  const remainingSeconds = quotaSeconds - elapsedSeconds;
+  if (remainingSeconds <= 0) return 0;
+  const remainingHours = remainingSeconds / 3600;
+  return remainingHours / daysLeft;
+};
+
+// Inspirational Quotes Dataset
