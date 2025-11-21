@@ -19,10 +19,10 @@ const formatTime = (seconds) => {
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
   const s = seconds % 60;
-  
+
   const mStr = m.toString().padStart(2, '0');
   const sStr = s.toString().padStart(2, '0');
-  
+
   if (h > 0) return `${h}:${mStr}:${sStr}`;
   return `${mStr}:${sStr}`;
 };
@@ -166,7 +166,7 @@ const getQuoteForTask = (taskId) => {
 const parseFlexibleInput = (input, defaultUnit = 'h') => {
   if (!input) return 0;
   const str = input.toString().trim().toLowerCase();
-  
+
   if (str.includes(':')) {
     const parts = str.split(':');
     const h = parseInt(parts[0]) || 0;
@@ -187,22 +187,22 @@ const parseFlexibleInput = (input, defaultUnit = 'h') => {
 // --- Reusable Input Component ---
 const SmartInput = ({ valueMinutes, onCommit, className, placeholder, unit = 'h' }) => {
   const [text, setText] = useState('');
-  
+
   useEffect(() => {
     if (unit === 'h' && valueMinutes > 0) {
       const h = parseFloat((valueMinutes / 60).toFixed(2));
       setText(h + 'h');
     } else if (unit === 'm' && valueMinutes > 0) {
-       setText(valueMinutes); 
+      setText(valueMinutes);
     } else {
-       setText('');
+      setText('');
     }
   }, [valueMinutes, unit]);
 
   const handleBlur = () => {
     const mins = parseFlexibleInput(text, unit);
     if (mins >= 0) onCommit(mins);
-    
+
     if (unit === 'h' && mins > 0) {
       setText(parseFloat((mins / 60).toFixed(2)) + 'h');
     } else if (unit === 'h') {
@@ -233,39 +233,48 @@ export default function App() {
     const saved = localStorage.getItem('timeblock-tasks');
     if (saved) {
       const parsed = JSON.parse(saved);
-      return parsed.map(t => ({ 
-        notes: '', 
-        history: [], 
-        currentSession: 0, 
+      return parsed.map(t => ({
+        notes: '',
+        history: [],
+        currentSession: 0,
         sessionGoal: 0,
         showTimer: true, // Default to showing the timer numbers
         dueDate: null,
-        ...t 
+        isHidden: t.isHidden || false,
+        ...t
       }));
     }
     return [
-      { id: '1', title: 'Deep Work', quotaMinutes: 600, elapsed: 3600, isRunning: false, colorIndex: 7, notes: '- Finish the Q3 report', history: [], currentSession: 0, sessionGoal: 0, showTimer: true, dueDate: null },
-      { id: '2', title: 'Email Triaging', quotaMinutes: 60, elapsed: 0, isRunning: false, colorIndex: 4, notes: '', history: [], currentSession: 0, sessionGoal: 0, showTimer: true, dueDate: null },
+      { id: '1', title: 'Deep Work', quotaMinutes: 600, elapsed: 3600, isRunning: false, colorIndex: 7, notes: '- Finish the Q3 report', history: [], currentSession: 0, sessionGoal: 0, showTimer: true, dueDate: null, isHidden: false },
+      { id: '2', title: 'Email Triaging', quotaMinutes: 60, elapsed: 0, isRunning: false, colorIndex: 4, notes: '', history: [], currentSession: 0, sessionGoal: 0, showTimer: true, dueDate: null, isHidden: false },
     ];
   });
 
   const [draggedItemIndex, setDraggedItemIndex] = useState(null);
-  const [activeTaskId, setActiveTaskId] = useState(null); 
+  const [activeTaskId, setActiveTaskId] = useState(null);
+  const [focusedTaskId, setFocusedTaskId] = useState(null); // Focus Mode
+  const [showHidden, setShowHidden] = useState(false); // Toggle hidden cards
+  const [isStatsOpen, setIsStatsOpen] = useState(false); // Global Stats Modal
+  const [globalSettings, setGlobalSettings] = useState(() => {
+    const saved = localStorage.getItem('timeblock-global-settings');
+    return saved ? JSON.parse(saved) : { dailyQuota: 480, weeklyQuota: 2400 };
+  });
+
   const [isColorPickerOpen, setIsColorPickerOpen] = useState(false);
-  const [isHistoryOpen, setIsHistoryOpen] = useState(true); 
-  
+  const [isHistoryOpen, setIsHistoryOpen] = useState(true);
+
   const [editingHistoryId, setEditingHistoryId] = useState(null);
 
   // --- Timer Logic ---
   useEffect(() => {
     const interval = setInterval(() => {
-      setTasks(currentTasks => 
+      setTasks(currentTasks =>
         currentTasks.map(task => {
           if (task.isRunning) {
-            return { 
-              ...task, 
+            return {
+              ...task,
               elapsed: task.elapsed + 1,
-              currentSession: (task.currentSession || 0) + 1 
+              currentSession: (task.currentSession || 0) + 1
             };
           }
           return task;
@@ -279,18 +288,28 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('timeblock-tasks', JSON.stringify(tasks));
   }, [tasks]);
-  
+
+  useEffect(() => {
+    localStorage.setItem('timeblock-global-settings', JSON.stringify(globalSettings));
+  }, [globalSettings]);
+
   useEffect(() => {
     setIsColorPickerOpen(false);
-    setEditingHistoryId(null); 
+    setEditingHistoryId(null);
   }, [activeTaskId]);
 
   // --- Keyboard Handler ---
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (e.key === 'Escape' && activeTaskId) {
-        setActiveTaskId(null);
-        setIsColorPickerOpen(false);
+      if (e.key === 'Escape') {
+        if (activeTaskId) {
+          setActiveTaskId(null);
+          setIsColorPickerOpen(false);
+        } else if (focusedTaskId) {
+          setFocusedTaskId(null);
+        } else if (isStatsOpen) {
+          setIsStatsOpen(false);
+        }
       }
     };
 
@@ -304,7 +323,7 @@ export default function App() {
     const newTask = {
       id: crypto.randomUUID(),
       title: 'New Task',
-      quotaMinutes: 60, 
+      quotaMinutes: 60,
       elapsed: 0,
       isRunning: false,
       colorIndex: newColorIndex,
@@ -312,8 +331,10 @@ export default function App() {
       history: [],
       currentSession: 0,
       sessionGoal: 0,
+      sessionGoal: 0,
       showTimer: true,
-      dueDate: null
+      dueDate: null,
+      isHidden: false
     };
     setTasks([...tasks, newTask]);
   };
@@ -333,7 +354,7 @@ export default function App() {
   };
 
   const toggleCardView = (id) => {
-    setTasks(tasks.map(t => 
+    setTasks(tasks.map(t =>
       t.id === id ? { ...t, showTimer: !t.showTimer } : t
     ));
   };
@@ -342,21 +363,21 @@ export default function App() {
     setTasks(tasks.map(t => {
       if (t.id === id) {
         if (t.currentSession > 0) {
-           const sessionEntry = {
+          const sessionEntry = {
             id: crypto.randomUUID(),
             type: 'session',
             amount: t.currentSession,
             timestamp: Date.now()
           };
-          return { 
-            ...t, 
-            isRunning: false, 
-            currentSession: 0, 
-            sessionGoal: 0, 
-            history: [sessionEntry, ...t.history] 
+          return {
+            ...t,
+            isRunning: false,
+            currentSession: 0,
+            sessionGoal: 0,
+            history: [sessionEntry, ...t.history]
           };
         } else {
-           return { ...t, isRunning: false, currentSession: 0, sessionGoal: 0 };
+          return { ...t, isRunning: false, currentSession: 0, sessionGoal: 0 };
         }
       }
       return t;
@@ -364,66 +385,66 @@ export default function App() {
   };
 
   const resetTotalTimer = (id) => {
-    setTasks(tasks.map(t => 
-        t.id === id ? { ...t, elapsed: 0, isRunning: false, currentSession: 0, sessionGoal: 0, history: [] } : t
+    setTasks(tasks.map(t =>
+      t.id === id ? { ...t, elapsed: 0, isRunning: false, currentSession: 0, sessionGoal: 0, history: [] } : t
     ));
   };
 
   const updateTask = (id, field, value) => {
-    setTasks(tasks.map(t => 
+    setTasks(tasks.map(t =>
       t.id === id ? { ...t, [field]: value } : t
     ));
   };
-  
+
   const addManualTime = (id, minsToAdd) => {
     const secondsToAdd = minsToAdd * 60;
     const logEntry = {
-        id: crypto.randomUUID(),
-        type: 'manual',
-        amount: secondsToAdd,
-        timestamp: Date.now()
+      id: crypto.randomUUID(),
+      type: 'manual',
+      amount: secondsToAdd,
+      timestamp: Date.now()
     };
 
-    setTasks(tasks.map(t => 
-        t.id === id ? { 
-            ...t, 
-            elapsed: Math.max(0, t.elapsed + secondsToAdd),
-            history: [logEntry, ...t.history]
-        } : t
+    setTasks(tasks.map(t =>
+      t.id === id ? {
+        ...t,
+        elapsed: Math.max(0, t.elapsed + secondsToAdd),
+        history: [logEntry, ...t.history]
+      } : t
     ));
   };
 
   // --- History Edit Handlers ---
   const deleteHistoryEntry = (taskId, entryId) => {
     setTasks(tasks.map(t => {
-        if (t.id !== taskId) return t;
-        
-        const entryToRemove = t.history.find(h => h.id === entryId);
-        if (!entryToRemove) return t;
+      if (t.id !== taskId) return t;
 
-        return {
-            ...t,
-            elapsed: Math.max(0, t.elapsed - entryToRemove.amount),
-            history: t.history.filter(h => h.id !== entryId)
-        };
+      const entryToRemove = t.history.find(h => h.id === entryId);
+      if (!entryToRemove) return t;
+
+      return {
+        ...t,
+        elapsed: Math.max(0, t.elapsed - entryToRemove.amount),
+        history: t.history.filter(h => h.id !== entryId)
+      };
     }));
   };
 
   const updateHistoryEntry = (taskId, entryId, newMinutes) => {
     setTasks(tasks.map(t => {
-        if (t.id !== taskId) return t;
-        
-        const entryToUpdate = t.history.find(h => h.id === entryId);
-        if (!entryToUpdate) return t;
+      if (t.id !== taskId) return t;
 
-        const newAmountSeconds = newMinutes * 60;
-        const diff = newAmountSeconds - entryToUpdate.amount;
+      const entryToUpdate = t.history.find(h => h.id === entryId);
+      if (!entryToUpdate) return t;
 
-        return {
-            ...t,
-            elapsed: Math.max(0, t.elapsed + diff), // Adjust total based on diff
-            history: t.history.map(h => h.id === entryId ? { ...h, amount: newAmountSeconds } : h)
-        };
+      const newAmountSeconds = newMinutes * 60;
+      const diff = newAmountSeconds - entryToUpdate.amount;
+
+      return {
+        ...t,
+        elapsed: Math.max(0, t.elapsed + diff), // Adjust total based on diff
+        history: t.history.map(h => h.id === entryId ? { ...h, amount: newAmountSeconds } : h)
+      };
     }));
     setEditingHistoryId(null);
   };
@@ -451,6 +472,44 @@ export default function App() {
     setDraggedItemIndex(null);
   };
 
+  // --- Global Stats Calculation ---
+  const calculateGlobalStats = () => {
+    const now = new Date();
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+
+    // Start of week (Monday)
+    const day = now.getDay();
+    const diff = now.getDate() - day + (day === 0 ? -6 : 1); // adjust when day is sunday
+    const startOfWeek = new Date(now.setDate(diff));
+    startOfWeek.setHours(0, 0, 0, 0);
+    const startOfWeekTime = startOfWeek.getTime();
+
+    let todaySeconds = 0;
+    let weekSeconds = 0;
+
+    tasks.forEach(task => {
+      // Add current session if running
+      if (task.isRunning) {
+        todaySeconds += task.currentSession;
+        weekSeconds += task.currentSession;
+      }
+
+      // Add history
+      task.history.forEach(entry => {
+        if (entry.timestamp >= startOfDay) {
+          todaySeconds += entry.amount;
+        }
+        if (entry.timestamp >= startOfWeekTime) {
+          weekSeconds += entry.amount;
+        }
+      });
+    });
+
+    return { todaySeconds, weekSeconds };
+  };
+
+  const globalStats = calculateGlobalStats();
+
   const activeTask = tasks.find(t => t.id === activeTaskId);
   const activeColors = activeTask ? COLORS[activeTask.colorIndex % COLORS.length] : null;
 
@@ -458,20 +517,30 @@ export default function App() {
     <div className="min-h-screen bg-slate-900 text-slate-100 p-4 sm:p-8 font-sans selection:bg-slate-700">
 
       {/* Grid */}
-      <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-20">
-        {tasks.map((task, index) => {
+      <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-20 pt-16">
+        {/* Global Stats Button (Top Right) */}
+        <div className="fixed top-6 right-6 z-40">
+          <button
+            onClick={() => setIsStatsOpen(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-slate-800/50 hover:bg-slate-700 text-slate-300 rounded-full backdrop-blur-md border border-slate-700 transition-all shadow-sm hover:shadow-md"
+          >
+            <Trophy className="w-4 h-4 text-yellow-500" />
+            <span className="text-sm font-bold font-mono">{formatTime(globalStats.todaySeconds)}</span>
+          </button>
+        </div>
+        {tasks.filter(t => showHidden || !t.isHidden).map((task, index) => {
           const colors = COLORS[task.colorIndex % COLORS.length];
-          
+
           // --- Calculations ---
           const quotaSeconds = task.quotaMinutes * 60;
           const totalProgressPercent = Math.min(100, (task.elapsed / quotaSeconds) * 100);
-          
+
           // Session Goal Logic
           const sessionGoalSeconds = (task.sessionGoal || 0) * 60;
           const hasSessionGoal = sessionGoalSeconds > 0;
           const currentSessionSeconds = task.currentSession || 0;
-          
-          const sessionProgressPercent = hasSessionGoal 
+
+          const sessionProgressPercent = hasSessionGoal
             ? Math.min(100, (currentSessionSeconds / sessionGoalSeconds) * 100)
             : 0;
 
@@ -480,16 +549,16 @@ export default function App() {
           const isQuotaMet = task.elapsed >= quotaSeconds;
           const isSessionMet = hasSessionGoal && currentSessionSeconds >= sessionGoalSeconds;
           const hasNotes = task.notes && task.notes.trim().length > 0;
-          
+
           // Due Date Calculations
           const daysLeft = getDaysLeft(task.dueDate);
           const avgHoursPerDay = daysLeft !== null ? getAvgHoursPerDay(task.quotaMinutes, task.elapsed, daysLeft) : null;
 
           // Card classes
           const cardGlowClass = isSessionMet ? 'shadow-emerald-400/40 ring-2 ring-emerald-400' : 'hover:shadow-xl';
-          
+
           return (
-            <div 
+            <div
               key={task.id}
               draggable
               onDragStart={(e) => handleDragStart(e, index)}
@@ -504,156 +573,168 @@ export default function App() {
                 cursor-grab active:cursor-grabbing
                 flex flex-col justify-between
                 min-h-[260px]
+                ${task.isHidden ? 'opacity-60 grayscale-[0.5] border-dashed' : ''}
               `}
+              onDoubleClick={() => setFocusedTaskId(task.id)}
             >
               {/* Controls Overlay (Drag) - Eye button removed */}
               <div className="absolute top-4 right-4 z-20 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                 <div className="text-slate-400/50 cursor-grab">
-                    <GripHorizontal className="w-5 h-5" />
-                 </div>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    updateTask(task.id, 'isHidden', !task.isHidden);
+                  }}
+                  className="text-slate-400/50 hover:text-slate-600 cursor-pointer transition-colors"
+                  title={task.isHidden ? "Unhide Card" : "Hide Card"}
+                >
+                  {task.isHidden ? <Eye className="w-5 h-5" /> : <EyeOff className="w-5 h-5" />}
+                </button>
+                <div className="text-slate-400/50 cursor-grab">
+                  <GripHorizontal className="w-5 h-5" />
+                </div>
               </div>
 
               {/* Top Section */}
               <div className="space-y-4 z-10">
-                <input 
+                <input
                   value={task.title}
                   onChange={(e) => updateTask(task.id, 'title', e.target.value)}
                   className={`w-full bg-transparent text-xl font-bold ${colors.text} placeholder-slate-400/50 outline-none border-none focus:ring-0 p-0 truncate text-center`}
                   placeholder="Task Name"
                 />
-                
+
                 {/* Quota display logic - Hidden in Focus Mode to reduce noise? Or kept minimal */}
                 <div className={`flex flex-col items-center gap-2 opacity-80 ${!task.showTimer ? 'invisible' : ''}`}>
-                   <div className="flex items-center gap-2">
-                     <span className={`text-xs font-bold uppercase tracking-wider ${colors.text}`}>Quota</span>
-                     <SmartInput
-                        valueMinutes={task.quotaMinutes}
-                        onCommit={(mins) => updateTask(task.id, 'quotaMinutes', mins)}
-                        unit="h"
-                        className={`w-20 bg-white/40 backdrop-blur-sm rounded-lg px-2 py-1 text-sm font-mono font-semibold ${colors.text} outline-none focus:ring-2 focus:ring-white/50 text-center`}
-                     />
-                   </div>
-                   {/* Due Date Info */}
-                   {daysLeft !== null && (
-                     <div className={`text-xs ${colors.text} opacity-75 text-center`}>
-                       {daysLeft > 0 ? (
-                         <>
-                           <span className="font-semibold">{daysLeft} {daysLeft === 1 ? 'day' : 'days'} left</span>
-                           {avgHoursPerDay !== null && avgHoursPerDay > 0 && (
-                             <span className="mx-1">•</span>
-                           )}
-                           {avgHoursPerDay !== null && avgHoursPerDay > 0 && (
-                             <span>{avgHoursPerDay.toFixed(1)}h/day needed</span>
-                           )}
-                         </>
-                       ) : daysLeft === 0 ? (
-                         <span className="font-semibold text-red-500">Due today!</span>
-                       ) : (
-                         <span className="font-semibold text-red-500">Overdue by {Math.abs(daysLeft)} {Math.abs(daysLeft) === 1 ? 'day' : 'days'}</span>
-                       )}
-                     </div>
-                   )}
+                  <div className="flex items-center gap-2">
+                    <span className={`text-xs font-bold uppercase tracking-wider ${colors.text}`}>Quota</span>
+                    <SmartInput
+                      valueMinutes={task.quotaMinutes}
+                      onCommit={(mins) => updateTask(task.id, 'quotaMinutes', mins)}
+                      unit="h"
+                      className={`w-20 bg-white/40 backdrop-blur-sm rounded-lg px-2 py-1 text-sm font-mono font-semibold ${colors.text} outline-none focus:ring-2 focus:ring-white/50 text-center`}
+                    />
+                  </div>
+                  {/* Due Date Info */}
+                  {daysLeft !== null && (
+                    <div className={`text-xs ${colors.text} opacity-75 text-center`}>
+                      {daysLeft > 0 ? (
+                        <>
+                          <span className="font-semibold">{daysLeft} {daysLeft === 1 ? 'day' : 'days'} left</span>
+                          {avgHoursPerDay !== null && avgHoursPerDay > 0 && (
+                            <span className="mx-1">•</span>
+                          )}
+                          {avgHoursPerDay !== null && avgHoursPerDay > 0 && (
+                            <span>{avgHoursPerDay.toFixed(1)}h/day needed</span>
+                          )}
+                        </>
+                      ) : daysLeft === 0 ? (
+                        <span className="font-semibold text-red-500">Due today!</span>
+                      ) : (
+                        <span className="font-semibold text-red-500">Overdue by {Math.abs(daysLeft)} {Math.abs(daysLeft) === 1 ? 'day' : 'days'}</span>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
 
               {/* Middle Content Area - CLICKABLE TO TOGGLE FOCUS */}
-              <div 
+              <div
                 onClick={() => toggleCardView(task.id)}
                 className="flex flex-col items-center justify-center flex-1 my-2 cursor-pointer select-none hover:opacity-80 transition-opacity"
                 title={task.showTimer ? "Click to Enter Focus Mode" : "Click to Show Timer"}
               >
                 {task.showTimer ? (
-                    // Standard View: Timer
-                    <>
-                        <div className={`text-5xl font-mono font-bold tracking-tight ${isOvertime ? 'text-red-500' : colors.text}`}>
-                        {formatTime(task.elapsed)}
-                        </div>
-                        {isOvertime && (
-                        <div className="flex items-center gap-1 text-red-500 text-xs font-bold mt-1 animate-pulse">
-                            <AlertCircle className="w-3 h-3" />
-                            <span>OVER LIMIT</span>
-                        </div>
-                        )}
-                    </>
-                ) : (
-                    // Focus View: Minimal
-                    <div className="flex flex-col items-center justify-center space-y-4 w-full">
-                        {isSessionMet && (
-                             <div className="flex items-center gap-2 text-emerald-600 bg-emerald-100 px-3 py-1 rounded-full animate-in zoom-in">
-                                <Trophy className="w-5 h-5 fill-current" />
-                                <span className="text-sm font-bold">Goal Met!</span>
-                             </div>
-                        )}
-                        {/* We just leave space empty or show motivational icon if idle */}
-                        {!isSessionMet && <div className={`w-2 h-2 rounded-full ${colors.dot} opacity-50`} />}
+                  // Standard View: Timer
+                  <>
+                    <div className={`text-5xl font-mono font-bold tracking-tight ${isOvertime ? 'text-red-500' : colors.text}`}>
+                      {formatTime(task.elapsed)}
                     </div>
+                    {isOvertime && (
+                      <div className="flex items-center gap-1 text-red-500 text-xs font-bold mt-1 animate-pulse">
+                        <AlertCircle className="w-3 h-3" />
+                        <span>OVER LIMIT</span>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  // Focus View: Minimal
+                  <div className="flex flex-col items-center justify-center space-y-4 w-full">
+                    {isSessionMet && (
+                      <div className="flex items-center gap-2 text-emerald-600 bg-emerald-100 px-3 py-1 rounded-full animate-in zoom-in">
+                        <Trophy className="w-5 h-5 fill-current" />
+                        <span className="text-sm font-bold">Goal Met!</span>
+                      </div>
+                    )}
+                    {/* We just leave space empty or show motivational icon if idle */}
+                    {!isSessionMet && <div className={`w-2 h-2 rounded-full ${colors.dot} opacity-50`} />}
+                  </div>
                 )}
               </div>
 
               {/* Bottom Controls & Bars */}
               <div className="space-y-3 z-10 w-full">
-                
+
                 {/* Progress Bars Container */}
                 <div className="space-y-1">
-                    {/* Main Total Progress Bar */}
-                    <div className="h-3 w-full bg-white/40 rounded-full overflow-hidden relative">
-                        <div 
-                            className={`h-full transition-all duration-500 ease-linear ${isOvertime ? 'bg-red-500' : colors.bar}`}
-                            style={{ width: `${totalProgressPercent}%` }}
-                        />
-                        {isOvertime && (
-                            <div className="absolute inset-0 bg-[linear-gradient(45deg,transparent_25%,rgba(255,255,255,0.3)_50%,transparent_75%)] bg-[length:20px_20px] animate-stripes pointer-events-none" />
-                        )}
-                    </div>
+                  {/* Main Total Progress Bar */}
+                  <div className="h-3 w-full bg-white/40 rounded-full overflow-hidden relative">
+                    <div
+                      className={`h-full transition-all duration-500 ease-linear ${isOvertime ? 'bg-red-500' : colors.bar}`}
+                      style={{ width: `${totalProgressPercent}%` }}
+                    />
+                    {isOvertime && (
+                      <div className="absolute inset-0 bg-[linear-gradient(45deg,transparent_25%,rgba(255,255,255,0.3)_50%,transparent_75%)] bg-[length:20px_20px] animate-stripes pointer-events-none" />
+                    )}
+                  </div>
 
-                    {/* Session Goal Bar */}
-                    {hasSessionGoal && (
-                        <div className="pt-1 flex items-center gap-2">
-                            <div className="h-2 w-full bg-white/20 rounded-full overflow-hidden relative flex-1">
-                                <div 
-                                    className={`
+                  {/* Session Goal Bar */}
+                  {hasSessionGoal && (
+                    <div className="pt-1 flex items-center gap-2">
+                      <div className="h-2 w-full bg-white/20 rounded-full overflow-hidden relative flex-1">
+                        <div
+                          className={`
                                         h-full transition-all duration-200 ease-linear 
                                         ${isSessionMet ? 'bg-emerald-400' : colors.sessionBar}
                                     `}
-                                    style={{ width: `${sessionProgressPercent}%` }}
-                                />
-                            </div>
-                            {isSessionMet && <Trophy className="w-3 h-3 text-emerald-600 animate-bounce" />}
-                        </div>
-                    )}
+                          style={{ width: `${sessionProgressPercent}%` }}
+                        />
+                      </div>
+                      {isSessionMet && <Trophy className="w-3 h-3 text-emerald-600 animate-bounce" />}
+                    </div>
+                  )}
                 </div>
 
                 {/* Controls */}
                 <div className="flex items-center justify-between pt-2">
                   <div className="flex gap-2">
                     {/* Play/Pause */}
-                    <button 
-                        onClick={() => toggleTimer(task.id)}
-                        className={`p-3 rounded-xl transition-colors ${task.isRunning ? 'bg-slate-800 text-white hover:bg-slate-700' : 'bg-white text-slate-800 hover:bg-white/80'} shadow-sm`}
+                    <button
+                      onClick={() => toggleTimer(task.id)}
+                      className={`p-3 rounded-xl transition-colors ${task.isRunning ? 'bg-slate-800 text-white hover:bg-slate-700' : 'bg-white text-slate-800 hover:bg-white/80'} shadow-sm`}
                     >
-                        {task.isRunning ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 ml-0.5" />}
+                      {task.isRunning ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 ml-0.5" />}
                     </button>
-                    
+
                     {/* Stop (End Session) */}
-                    <button 
-                        onClick={() => stopSession(task.id)}
-                        className={`p-3 rounded-xl transition-colors bg-white/40 hover:bg-white/80 ${colors.text} shadow-sm`}
-                        title="Stop Session & Log Time"
+                    <button
+                      onClick={() => stopSession(task.id)}
+                      className={`p-3 rounded-xl transition-colors bg-white/40 hover:bg-white/80 ${colors.text} shadow-sm`}
+                      title="Stop Session & Log Time"
                     >
-                        <Square className="w-5 h-5 fill-current" />
+                      <Square className="w-5 h-5 fill-current" />
                     </button>
                   </div>
 
                   <div className="flex gap-2">
-                    <button 
-                        onClick={() => setActiveTaskId(task.id)}
-                        className={`p-3 rounded-xl transition-colors hover:bg-white/50 ${colors.text} ${hasNotes ? 'bg-white/30' : ''}`}
-                        title="Notes, History & Details"
-                      >
-                        <FileText className={`w-5 h-5 ${hasNotes ? 'fill-current' : ''}`} />
+                    <button
+                      onClick={() => setActiveTaskId(task.id)}
+                      className={`p-3 rounded-xl transition-colors hover:bg-white/50 ${colors.text} ${hasNotes ? 'bg-white/30' : ''}`}
+                      title="Notes, History & Details"
+                    >
+                      <FileText className={`w-5 h-5 ${hasNotes ? 'fill-current' : ''}`} />
                     </button>
-                    
-                    <button 
+
+                    <button
                       onClick={() => removeTask(task.id)}
                       className="p-3 rounded-xl text-slate-400 hover:text-red-500 hover:bg-red-100/50 transition-colors"
                       title="Delete"
@@ -673,25 +754,139 @@ export default function App() {
       {tasks.length === 0 && (
         <div className="text-center mt-20 opacity-40">
           <div className="inline-block p-6 rounded-full bg-slate-800 mb-4">
-             <Clock className="w-12 h-12 text-slate-500" />
+            <Clock className="w-12 h-12 text-slate-500" />
           </div>
           <p className="text-slate-400 text-lg">No tasks yet. Add a block to get started.</p>
         </div>
       )}
 
-      {/* Add Block Button - Fixed Bottom Right */}
-      <button 
-        onClick={addTask}
-        className="fixed bottom-6 right-6 flex items-center gap-2 px-6 py-3 bg-violet-300 hover:bg-violet-200 active:bg-violet-400 text-violet-900 rounded-full font-semibold transition-all shadow-lg hover:shadow-violet-300/40 transform hover:-translate-y-0.5 z-40 backdrop-blur-sm"
-      >
-        <Plus className="w-5 h-5" />
-        Add Block
-      </button>
+      {/* Add Block Button & Show Hidden Toggle */}
+      <div className="fixed bottom-6 right-6 flex items-center gap-4 z-40">
+        {/* Show Hidden Toggle */}
+        {tasks.some(t => t.isHidden) && (
+          <button
+            onClick={() => setShowHidden(!showHidden)}
+            className={`
+                    p-3 rounded-full font-semibold transition-all shadow-lg backdrop-blur-sm
+                    flex items-center gap-2
+                    ${showHidden ? 'bg-slate-700 text-slate-300 hover:bg-slate-600' : 'bg-slate-800/50 text-slate-400 hover:bg-slate-800 hover:text-slate-200'}
+                `}
+            title={showHidden ? "Hide Hidden Cards" : "Show Hidden Cards"}
+          >
+            {showHidden ? <Eye className="w-5 h-5" /> : <EyeOff className="w-5 h-5" />}
+          </button>
+        )}
+
+        <button
+          onClick={addTask}
+          className="flex items-center gap-2 px-6 py-3 bg-violet-300 hover:bg-violet-200 active:bg-violet-400 text-violet-900 rounded-full font-semibold transition-all shadow-lg hover:shadow-violet-300/40 transform hover:-translate-y-0.5"
+        >
+          <Plus className="w-5 h-5" />
+          Add Block
+        </button>
+      </div>
+
+      {/* Focus Mode Overlay */}
+      {focusedTaskId && (() => {
+        const task = tasks.find(t => t.id === focusedTaskId);
+        if (!task) return null;
+        const colors = COLORS[task.colorIndex % COLORS.length];
+        const quotaSeconds = task.quotaMinutes * 60;
+        const totalProgressPercent = Math.min(100, (task.elapsed / quotaSeconds) * 100);
+        const sessionGoalSeconds = (task.sessionGoal || 0) * 60;
+        const hasSessionGoal = sessionGoalSeconds > 0;
+        const currentSessionSeconds = task.currentSession || 0;
+        const sessionProgressPercent = hasSessionGoal ? Math.min(100, (currentSessionSeconds / sessionGoalSeconds) * 100) : 0;
+        const isOvertime = task.elapsed > quotaSeconds;
+        const isSessionMet = hasSessionGoal && currentSessionSeconds >= sessionGoalSeconds;
+
+        return (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/90 backdrop-blur-md animate-in fade-in duration-300">
+            <div className="absolute top-6 right-6 z-50">
+              <button
+                onClick={() => setFocusedTaskId(null)}
+                className="p-3 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors"
+              >
+                <X className="w-8 h-8" />
+              </button>
+            </div>
+
+            <div className={`
+                    w-[90%] max-w-4xl aspect-video 
+                    ${colors.bg} ${colors.border} border-4
+                    rounded-[3rem] p-12
+                    shadow-2xl shadow-black/50
+                    flex flex-col justify-between
+                    relative overflow-hidden
+                    animate-in zoom-in-95 duration-300
+                `}>
+              {/* Focus Mode Content */}
+              <div className="flex flex-col items-center justify-center flex-1 space-y-8">
+                <h1 className={`text-6xl font-bold ${colors.text} text-center tracking-tight`}>
+                  {task.title}
+                </h1>
+
+                <div className="flex flex-col items-center gap-4">
+                  <div className={`text-9xl font-mono font-bold tracking-tighter ${isOvertime ? 'text-red-600' : colors.text}`}>
+                    {formatTime(task.elapsed)}
+                  </div>
+
+                  {hasSessionGoal && (
+                    <div className={`text-2xl font-medium ${colors.text} opacity-80 flex items-center gap-3`}>
+                      <span>Session: {formatTime(currentSessionSeconds)}</span>
+                      <span className="opacity-50">/</span>
+                      <span>{Math.round(task.sessionGoal)}m Goal</span>
+                      {isSessionMet && <Trophy className="w-8 h-8 text-emerald-600 animate-bounce ml-2" />}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Focus Mode Controls */}
+              <div className="max-w-2xl mx-auto w-full space-y-6">
+                {/* Progress Bars */}
+                <div className="space-y-3">
+                  <div className="h-6 w-full bg-white/40 rounded-full overflow-hidden relative">
+                    <div
+                      className={`h-full transition-all duration-1000 ease-linear ${isOvertime ? 'bg-red-500' : colors.bar}`}
+                      style={{ width: `${totalProgressPercent}%` }}
+                    />
+                  </div>
+                  {hasSessionGoal && (
+                    <div className="h-4 w-full bg-white/20 rounded-full overflow-hidden relative">
+                      <div
+                        className={`h-full transition-all duration-1000 ease-linear ${isSessionMet ? 'bg-emerald-500' : colors.sessionBar}`}
+                        style={{ width: `${sessionProgressPercent}%` }}
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-center gap-6">
+                  <button
+                    onClick={() => toggleTimer(task.id)}
+                    className={`px-12 py-6 rounded-2xl text-2xl font-bold transition-all transform hover:scale-105 shadow-lg flex items-center gap-4 ${task.isRunning ? 'bg-slate-900 text-white hover:bg-slate-800' : 'bg-white text-slate-900 hover:bg-white/90'}`}
+                  >
+                    {task.isRunning ? <><Pause className="w-8 h-8" /> PAUSE</> : <><Play className="w-8 h-8" /> FOCUS</>}
+                  </button>
+                  <button
+                    onClick={() => stopSession(task.id)}
+                    className={`p-6 rounded-2xl bg-white/40 hover:bg-white/60 ${colors.text} transition-colors`}
+                    title="Stop Session"
+                  >
+                    <Square className="w-8 h-8 fill-current" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Expanded Task Modal */}
       {activeTask && activeColors && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm animate-in fade-in duration-200">
-          <div 
+          <div
             className={`
               w-full max-w-2xl h-[85vh] flex flex-col
               ${activeColors.bg} ${activeColors.border} border-4
@@ -703,26 +898,26 @@ export default function App() {
             {/* Modal Header */}
             <div className={`p-6 flex items-start justify-between border-b ${activeColors.border} bg-white/20 relative z-20`}>
               <div className="flex-1 mr-4">
-                <input 
+                <input
                   value={activeTask.title}
                   onChange={(e) => updateTask(activeTask.id, 'title', e.target.value)}
                   className={`w-full bg-transparent text-3xl font-bold ${activeColors.text} placeholder-slate-400/50 outline-none border-none focus:ring-0 p-0`}
                   placeholder="Task Name"
                 />
                 <div className="flex items-center gap-4 mt-2 text-sm font-medium opacity-75">
-                   <span className={`${activeColors.text}`}>Goal: {(activeTask.quotaMinutes / 60).toFixed(1)}h</span>
-                   <span className={`${activeColors.text}`}>•</span>
-                   <span className={`${activeColors.text} font-mono`}>
-                      Total: {formatTime(activeTask.elapsed)}
-                   </span>
+                  <span className={`${activeColors.text}`}>Goal: {(activeTask.quotaMinutes / 60).toFixed(1)}h</span>
+                  <span className={`${activeColors.text}`}>•</span>
+                  <span className={`${activeColors.text} font-mono`}>
+                    Total: {formatTime(activeTask.elapsed)}
+                  </span>
                 </div>
               </div>
 
               {/* Controls: Reset, Color Picker, Close */}
               <div className="flex items-center gap-2">
-                
+
                 {/* Reset Button (Total) */}
-                <button 
+                <button
                   onClick={() => resetTotalTimer(activeTask.id)}
                   className={`
                     w-10 h-10 rounded-full ${activeColors.text} bg-white/30
@@ -735,7 +930,7 @@ export default function App() {
 
                 {/* Color Picker */}
                 <div className="relative">
-                  <button 
+                  <button
                     onClick={() => setIsColorPickerOpen(!isColorPickerOpen)}
                     className={`
                       w-10 h-10 rounded-full ${activeColors.dot} 
@@ -745,28 +940,28 @@ export default function App() {
                     `}
                     title="Change Color"
                   />
-                  
+
                   {isColorPickerOpen && (
                     <div className="absolute top-full right-0 mt-2 p-3 bg-white rounded-2xl shadow-xl border border-slate-100 grid grid-cols-5 gap-2 w-[200px] animate-in fade-in zoom-in-95 z-50">
-                        {COLORS.map((c, i) => (
-                          <button
-                            key={i}
-                            onClick={() => {
-                              updateTask(activeTask.id, 'colorIndex', i);
-                              setIsColorPickerOpen(false);
-                            }}
-                            className={`
+                      {COLORS.map((c, i) => (
+                        <button
+                          key={i}
+                          onClick={() => {
+                            updateTask(activeTask.id, 'colorIndex', i);
+                            setIsColorPickerOpen(false);
+                          }}
+                          className={`
                               w-8 h-8 rounded-full ${c.dot}
                               border-2 transition-transform
                               ${activeTask.colorIndex === i ? 'border-slate-800 scale-110 shadow-sm' : 'border-transparent hover:scale-110'}
                             `}
-                          />
-                        ))}
+                        />
+                      ))}
                     </div>
                   )}
                 </div>
 
-                <button 
+                <button
                   onClick={() => setActiveTaskId(null)}
                   className={`p-2 rounded-full hover:bg-black/10 transition-colors ${activeColors.text}`}
                 >
@@ -777,7 +972,7 @@ export default function App() {
 
             {/* Modal Body */}
             <div className="flex-1 overflow-hidden flex flex-col md:flex-row">
-              
+
               {/* Notes Section (Main Area) */}
               <div className="flex-1 p-6 flex flex-col">
                 <div className="flex items-center gap-2 mb-3 opacity-70">
@@ -801,204 +996,286 @@ export default function App() {
 
               {/* Sidebar Controls */}
               <div className={`p-6 md:w-72 flex flex-col gap-6 border-t md:border-t-0 md:border-l ${activeColors.border} bg-white/10 overflow-y-auto`}>
-                
+
                 {/* Timer Display (Small in Sidebar) */}
                 <div className="text-center p-4 bg-white/30 rounded-2xl shadow-sm">
                   <div className={`text-3xl font-mono font-bold tracking-tight mb-2 ${activeTask.elapsed > activeTask.quotaMinutes * 60 ? 'text-red-600' : activeColors.text}`}>
                     {formatTime(activeTask.elapsed)}
                   </div>
                   <div className="flex justify-center gap-2">
-                    <button 
-                        onClick={() => toggleTimer(activeTask.id)}
-                        className={`flex-1 py-2 rounded-lg font-bold transition-colors shadow-sm flex items-center justify-center gap-2 ${activeTask.isRunning ? 'bg-slate-800 text-white hover:bg-slate-700' : 'bg-white text-slate-800 hover:bg-white/90'}`}
-                      >
-                        {activeTask.isRunning ? 'Pause' : 'Start'}
-                    </button>
-                     <button 
-                        onClick={() => stopSession(activeTask.id)}
-                        className={`p-2 rounded-lg bg-white/50 hover:bg-white/80 ${activeColors.text}`}
-                        title="Stop & Log"
+                    <button
+                      onClick={() => toggleTimer(activeTask.id)}
+                      className={`flex-1 py-2 rounded-lg font-bold transition-colors shadow-sm flex items-center justify-center gap-2 ${activeTask.isRunning ? 'bg-slate-800 text-white hover:bg-slate-700' : 'bg-white text-slate-800 hover:bg-white/90'}`}
                     >
-                        <Square className="w-5 h-5 fill-current" />
+                      {activeTask.isRunning ? 'Pause' : 'Start'}
+                    </button>
+                    <button
+                      onClick={() => stopSession(activeTask.id)}
+                      className={`p-2 rounded-lg bg-white/50 hover:bg-white/80 ${activeColors.text}`}
+                      title="Stop & Log"
+                    >
+                      <Square className="w-5 h-5 fill-current" />
                     </button>
                   </div>
                 </div>
 
                 {/* Settings Group */}
                 <div className="space-y-4">
-                    
-                    {/* Quota */}
-                    <div className="space-y-1">
+
+                  {/* Quota */}
+                  <div className="space-y-1">
                     <label className={`text-xs font-bold uppercase tracking-wider ${activeColors.text} opacity-80`}>
-                        Total Quota
+                      Total Quota
                     </label>
                     <SmartInput
-                        valueMinutes={activeTask.quotaMinutes}
-                        onCommit={(mins) => updateTask(activeTask.id, 'quotaMinutes', mins)}
-                        unit="h"
-                        placeholder="e.g. 1.5"
-                        className={`w-full bg-white/40 rounded-lg py-2 text-center font-mono font-bold ${activeColors.text} outline-none focus:ring-2 focus:ring-white/50`}
+                      valueMinutes={activeTask.quotaMinutes}
+                      onCommit={(mins) => updateTask(activeTask.id, 'quotaMinutes', mins)}
+                      unit="h"
+                      placeholder="e.g. 1.5"
+                      className={`w-full bg-white/40 rounded-lg py-2 text-center font-mono font-bold ${activeColors.text} outline-none focus:ring-2 focus:ring-white/50`}
                     />
-                    </div>
+                  </div>
 
-                    {/* Session Goal (Intention) */}
-                    <div className="space-y-1">
-                        <label className={`text-xs font-bold uppercase tracking-wider ${activeColors.text} opacity-80 flex items-center gap-1`}>
-                            <Target className="w-3 h-3" /> Session Goal
-                        </label>
-                        <SmartInput
-                            valueMinutes={activeTask.sessionGoal}
-                            onCommit={(mins) => updateTask(activeTask.id, 'sessionGoal', mins)}
-                            unit="m"
-                            placeholder="e.g. 30m"
-                            className={`w-full bg-white/40 rounded-lg py-2 px-3 text-center font-mono font-bold ${activeColors.text} placeholder-${activeColors.text}/40 outline-none focus:ring-2 focus:ring-white/50`}
-                        />
-                    </div>
-
-                    {/* Due Date */}
-                    <div className="space-y-1">
-                        <label className={`text-xs font-bold uppercase tracking-wider ${activeColors.text} opacity-80 flex items-center gap-1`}>
-                            <Calendar className="w-3 h-3" /> Due Date
-                        </label>
-                        <div className="relative">
-                            <input
-                                type="date"
-                                value={activeTask.dueDate ? new Date(activeTask.dueDate).toISOString().split('T')[0] : ''}
-                                onChange={(e) => {
-                                    const dateValue = e.target.value;
-                                    if (dateValue) {
-                                        const timestamp = new Date(dateValue).getTime();
-                                        updateTask(activeTask.id, 'dueDate', timestamp);
-                                    } else {
-                                        updateTask(activeTask.id, 'dueDate', null);
-                                    }
-                                }}
-                                className={`w-full bg-white/50 backdrop-blur-sm rounded-xl py-2.5 px-4 text-center font-mono font-semibold ${activeColors.text} outline-none focus:ring-2 focus:ring-white/60 focus:bg-white/60 transition-all shadow-sm hover:shadow-md date-input-elegant`}
-                            />
-                        </div>
-                        {activeTask.dueDate && (() => {
-                            const daysLeft = getDaysLeft(activeTask.dueDate);
-                            const avgHours = getAvgHoursPerDay(activeTask.quotaMinutes, activeTask.elapsed, daysLeft);
-                            return (
-                                <div className={`text-xs ${activeColors.text} opacity-70 mt-1 text-center`}>
-                                    {daysLeft !== null && daysLeft > 0 && (
-                                        <span>{daysLeft} {daysLeft === 1 ? 'day' : 'days'} left</span>
-                                    )}
-                                    {avgHours !== null && avgHours > 0 && daysLeft > 0 && (
-                                        <span className="block mt-0.5">{avgHours.toFixed(1)}h/day needed</span>
-                                    )}
-                                    {daysLeft !== null && daysLeft <= 0 && (
-                                        <span className="text-red-500 font-semibold">
-                                            {daysLeft === 0 ? 'Due today!' : `Overdue by ${Math.abs(daysLeft)} ${Math.abs(daysLeft) === 1 ? 'day' : 'days'}`}
-                                        </span>
-                                    )}
-                                </div>
-                            );
-                        })()}
-                    </div>
-
-                    {/* Log Offline Time */}
-                    <div className="space-y-1">
+                  {/* Session Goal (Intention) */}
+                  <div className="space-y-1">
                     <label className={`text-xs font-bold uppercase tracking-wider ${activeColors.text} opacity-80 flex items-center gap-1`}>
-                        <History className="w-3 h-3" /> Log Offline Time
+                      <Target className="w-3 h-3" /> Session Goal
                     </label>
                     <SmartInput
-                        valueMinutes={0}
-                        onCommit={(mins) => addManualTime(activeTask.id, mins)}
-                        unit="m"
-                        placeholder=""
-                        className={`w-full bg-white/40 rounded-lg py-2 px-3 font-mono font-bold ${activeColors.text} placeholder-${activeColors.text}/40 outline-none focus:ring-2 focus:ring-white/50`}
+                      valueMinutes={activeTask.sessionGoal}
+                      onCommit={(mins) => updateTask(activeTask.id, 'sessionGoal', mins)}
+                      unit="m"
+                      placeholder="e.g. 30m"
+                      className={`w-full bg-white/40 rounded-lg py-2 px-3 text-center font-mono font-bold ${activeColors.text} placeholder-${activeColors.text}/40 outline-none focus:ring-2 focus:ring-white/50`}
                     />
+                  </div>
+
+                  {/* Due Date */}
+                  <div className="space-y-1">
+                    <label className={`text-xs font-bold uppercase tracking-wider ${activeColors.text} opacity-80 flex items-center gap-1`}>
+                      <Calendar className="w-3 h-3" /> Due Date
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="date"
+                        value={activeTask.dueDate ? new Date(activeTask.dueDate).toISOString().split('T')[0] : ''}
+                        onChange={(e) => {
+                          const dateValue = e.target.value;
+                          if (dateValue) {
+                            const timestamp = new Date(dateValue).getTime();
+                            updateTask(activeTask.id, 'dueDate', timestamp);
+                          } else {
+                            updateTask(activeTask.id, 'dueDate', null);
+                          }
+                        }}
+                        className={`w-full bg-white/50 backdrop-blur-sm rounded-xl py-2.5 px-4 text-center font-mono font-semibold ${activeColors.text} outline-none focus:ring-2 focus:ring-white/60 focus:bg-white/60 transition-all shadow-sm hover:shadow-md date-input-elegant`}
+                      />
                     </div>
+                    {activeTask.dueDate && (() => {
+                      const daysLeft = getDaysLeft(activeTask.dueDate);
+                      const avgHours = getAvgHoursPerDay(activeTask.quotaMinutes, activeTask.elapsed, daysLeft);
+                      return (
+                        <div className={`text-xs ${activeColors.text} opacity-70 mt-1 text-center`}>
+                          {daysLeft !== null && daysLeft > 0 && (
+                            <span>{daysLeft} {daysLeft === 1 ? 'day' : 'days'} left</span>
+                          )}
+                          {avgHours !== null && avgHours > 0 && daysLeft > 0 && (
+                            <span className="block mt-0.5">{avgHours.toFixed(1)}h/day needed</span>
+                          )}
+                          {daysLeft !== null && daysLeft <= 0 && (
+                            <span className="text-red-500 font-semibold">
+                              {daysLeft === 0 ? 'Due today!' : `Overdue by ${Math.abs(daysLeft)} ${Math.abs(daysLeft) === 1 ? 'day' : 'days'}`}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </div>
+
+                  {/* Log Offline Time */}
+                  <div className="space-y-1">
+                    <label className={`text-xs font-bold uppercase tracking-wider ${activeColors.text} opacity-80 flex items-center gap-1`}>
+                      <History className="w-3 h-3" /> Log Offline Time
+                    </label>
+                    <SmartInput
+                      valueMinutes={0}
+                      onCommit={(mins) => addManualTime(activeTask.id, mins)}
+                      unit="m"
+                      placeholder=""
+                      className={`w-full bg-white/40 rounded-lg py-2 px-3 font-mono font-bold ${activeColors.text} placeholder-${activeColors.text}/40 outline-none focus:ring-2 focus:ring-white/50`}
+                    />
+                  </div>
                 </div>
 
                 {/* History Log */}
                 <div className="border-t border-white/20 pt-4 mt-2">
-                    <button 
-                        onClick={() => setIsHistoryOpen(!isHistoryOpen)}
-                        className={`flex items-center justify-between w-full text-xs font-bold uppercase tracking-wider ${activeColors.text} opacity-80 mb-2 hover:opacity-100`}
-                    >
-                        <span className="flex items-center gap-1"><History className="w-3 h-3" /> History</span>
-                        {isHistoryOpen ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-                    </button>
-                    
-                    {isHistoryOpen && (
-                        <div className="max-h-40 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
-                            {/* In Progress Session */}
-                            {activeTask.isRunning && activeTask.currentSession > 0 && (
-                                <div className="group/item flex justify-between items-center text-xs bg-emerald-100/50 border border-emerald-300/50 p-2 rounded-lg">
-                                    <div className="flex items-center gap-2">
-                                       <Clock className={`w-3 h-3 ${activeColors.text} animate-pulse`} />
-                                       <span className={`${activeColors.text} opacity-90 font-semibold`}>
-                                          In Progress
-                                       </span>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                       <span className={`${activeColors.text} font-bold`}>
-                                          {Math.round(activeTask.currentSession / 60)}m
-                                       </span>
-                                    </div>
-                                </div>
-                            )}
-                            
-                            {activeTask.history.length === 0 && (!activeTask.isRunning || activeTask.currentSession === 0) ? (
-                                <div className={`text-xs opacity-50 italic ${activeColors.text}`}>No history yet</div>
-                            ) : (
-                                activeTask.history.map((entry) => {
-                                    const isEditing = editingHistoryId === entry.id;
-                                    const mins = Math.round(entry.amount / 60);
-                                    
-                                    return (
-                                    <div key={entry.id} className="group/item flex justify-between items-center text-xs bg-white/30 p-2 rounded-lg hover:bg-white/40 transition-colors">
-                                        <div className="flex items-center gap-2">
-                                           <span className={`${activeColors.text} opacity-70 font-mono`}>
-                                              {formatHistoryDate(entry.timestamp)}
-                                           </span>
-                                        </div>
+                  <button
+                    onClick={() => setIsHistoryOpen(!isHistoryOpen)}
+                    className={`flex items-center justify-between w-full text-xs font-bold uppercase tracking-wider ${activeColors.text} opacity-80 mb-2 hover:opacity-100`}
+                  >
+                    <span className="flex items-center gap-1"><History className="w-3 h-3" /> History</span>
+                    {isHistoryOpen ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                  </button>
 
-                                        <div className="flex items-center gap-2">
-                                           {isEditing ? (
-                                              <div className="flex items-center gap-1">
-                                                <SmartInput
-                                                  valueMinutes={mins}
-                                                  onCommit={(newVal) => updateHistoryEntry(activeTask.id, entry.id, newVal)}
-                                                  unit="m"
-                                                  className={`w-10 bg-white rounded px-1 py-0.5 text-center font-bold ${activeColors.text}`}
-                                                />
-                                              </div>
-                                           ) : (
-                                              <span className={`${activeColors.text} font-bold`}>
-                                                  {entry.type === 'manual' ? '+' : ''}{mins}m
-                                              </span>
-                                           )}
-                                           
-                                           {/* Edit Controls (Visible on Hover) */}
-                                           {!isEditing && (
-                                             <div className="flex gap-1 opacity-0 group-hover/item:opacity-100 transition-opacity">
-                                                <button 
-                                                  onClick={() => setEditingHistoryId(entry.id)}
-                                                  className={`p-1 hover:bg-white/50 rounded ${activeColors.text}`}
-                                                  title="Edit"
-                                                >
-                                                  <Pencil className="w-3 h-3" />
-                                                </button>
-                                                <button 
-                                                  onClick={() => deleteHistoryEntry(activeTask.id, entry.id)}
-                                                  className={`p-1 hover:bg-red-100 rounded text-red-500`}
-                                                  title="Delete"
-                                                >
-                                                  <Trash2 className="w-3 h-3" />
-                                                </button>
-                                             </div>
-                                           )}
-                                        </div>
-                                    </div>
-                                )})
-                            )}
+                  {isHistoryOpen && (
+                    <div className="max-h-40 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
+                      {/* In Progress Session */}
+                      {activeTask.isRunning && activeTask.currentSession > 0 && (
+                        <div className="group/item flex justify-between items-center text-xs bg-emerald-100/50 border border-emerald-300/50 p-2 rounded-lg">
+                          <div className="flex items-center gap-2">
+                            <Clock className={`w-3 h-3 ${activeColors.text} animate-pulse`} />
+                            <span className={`${activeColors.text} opacity-90 font-semibold`}>
+                              In Progress
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className={`${activeColors.text} font-bold`}>
+                              {Math.round(activeTask.currentSession / 60)}m
+                            </span>
+                          </div>
                         </div>
-                    )}
+                      )}
+
+                      {activeTask.history.length === 0 && (!activeTask.isRunning || activeTask.currentSession === 0) ? (
+                        <div className={`text-xs opacity-50 italic ${activeColors.text}`}>No history yet</div>
+                      ) : (
+                        activeTask.history.map((entry) => {
+                          const isEditing = editingHistoryId === entry.id;
+                          const mins = Math.round(entry.amount / 60);
+
+                          return (
+                            <div key={entry.id} className="group/item flex justify-between items-center text-xs bg-white/30 p-2 rounded-lg hover:bg-white/40 transition-colors">
+                              <div className="flex items-center gap-2">
+                                <span className={`${activeColors.text} opacity-70 font-mono`}>
+                                  {formatHistoryDate(entry.timestamp)}
+                                </span>
+                              </div>
+
+                              <div className="flex items-center gap-2">
+                                {isEditing ? (
+                                  <div className="flex items-center gap-1">
+                                    <SmartInput
+                                      valueMinutes={mins}
+                                      onCommit={(newVal) => updateHistoryEntry(activeTask.id, entry.id, newVal)}
+                                      unit="m"
+                                      className={`w-10 bg-white rounded px-1 py-0.5 text-center font-bold ${activeColors.text}`}
+                                    />
+                                  </div>
+                                ) : (
+                                  <span className={`${activeColors.text} font-bold`}>
+                                    {entry.type === 'manual' ? '+' : ''}{mins}m
+                                  </span>
+                                )}
+
+                                {/* Edit Controls (Visible on Hover) */}
+                                {!isEditing && (
+                                  <div className="flex gap-1 opacity-0 group-hover/item:opacity-100 transition-opacity">
+                                    <button
+                                      onClick={() => setEditingHistoryId(entry.id)}
+                                      className={`p-1 hover:bg-white/50 rounded ${activeColors.text}`}
+                                      title="Edit"
+                                    >
+                                      <Pencil className="w-3 h-3" />
+                                    </button>
+                                    <button
+                                      onClick={() => deleteHistoryEntry(activeTask.id, entry.id)}
+                                      className={`p-1 hover:bg-red-100 rounded text-red-500`}
+                                      title="Delete"
+                                    >
+                                      <Trash2 className="w-3 h-3" />
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )
+                        })
+                      )}
+                    </div>
+                  )}
                 </div>
 
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Global Stats Modal */}
+      {isStatsOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl p-8 relative animate-in zoom-in-95 duration-200">
+            <button
+              onClick={() => setIsStatsOpen(false)}
+              className="absolute top-4 right-4 p-2 rounded-full hover:bg-slate-800 text-slate-400 transition-colors"
+            >
+              <X className="w-6 h-6" />
+            </button>
+
+            <h2 className="text-2xl font-bold text-white mb-8 flex items-center gap-3">
+              <Trophy className="w-8 h-8 text-yellow-500" />
+              Global Stats
+            </h2>
+
+            <div className="space-y-8">
+              {/* Daily Stats */}
+              <div className="space-y-3">
+                <div className="flex justify-between items-end">
+                  <label className="text-sm font-bold text-slate-400 uppercase tracking-wider">Today's Focus</label>
+                  <div className="text-right">
+                    <div className="text-2xl font-mono font-bold text-white">
+                      {formatTime(globalStats.todaySeconds)}
+                    </div>
+                    <div className="text-xs text-slate-500">
+                      Goal: {Math.round(globalSettings.dailyQuota / 60)}h
+                    </div>
+                  </div>
+                </div>
+                <div className="h-4 w-full bg-slate-800 rounded-full overflow-hidden relative">
+                  <div
+                    className="h-full bg-gradient-to-r from-blue-500 to-cyan-400 transition-all duration-500"
+                    style={{ width: `${Math.min(100, (globalStats.todaySeconds / (globalSettings.dailyQuota * 60)) * 100)}%` }}
+                  />
+                </div>
+                <div className="flex items-center gap-2 mt-2">
+                  <span className="text-xs text-slate-500">Daily Goal:</span>
+                  <SmartInput
+                    valueMinutes={globalSettings.dailyQuota}
+                    onCommit={(mins) => setGlobalSettings(s => ({ ...s, dailyQuota: mins }))}
+                    unit="h"
+                    className="bg-slate-800 text-slate-300 text-xs rounded px-2 py-1 w-16 text-center outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              {/* Weekly Stats */}
+              <div className="space-y-3">
+                <div className="flex justify-between items-end">
+                  <label className="text-sm font-bold text-slate-400 uppercase tracking-wider">Weekly Focus</label>
+                  <div className="text-right">
+                    <div className="text-2xl font-mono font-bold text-white">
+                      {formatTime(globalStats.weekSeconds)}
+                    </div>
+                    <div className="text-xs text-slate-500">
+                      Goal: {Math.round(globalSettings.weeklyQuota / 60)}h
+                    </div>
+                  </div>
+                </div>
+                <div className="h-4 w-full bg-slate-800 rounded-full overflow-hidden relative">
+                  <div
+                    className="h-full bg-gradient-to-r from-violet-500 to-fuchsia-400 transition-all duration-500"
+                    style={{ width: `${Math.min(100, (globalStats.weekSeconds / (globalSettings.weeklyQuota * 60)) * 100)}%` }}
+                  />
+                </div>
+                <div className="flex items-center gap-2 mt-2">
+                  <span className="text-xs text-slate-500">Weekly Goal:</span>
+                  <SmartInput
+                    valueMinutes={globalSettings.weeklyQuota}
+                    onCommit={(mins) => setGlobalSettings(s => ({ ...s, weeklyQuota: mins }))}
+                    unit="h"
+                    className="bg-slate-800 text-slate-300 text-xs rounded px-2 py-1 w-16 text-center outline-none focus:ring-1 focus:ring-violet-500"
+                  />
+                </div>
               </div>
             </div>
           </div>
